@@ -1,54 +1,57 @@
-#!/uusr/bin/python3
+#!/usr/bin/python3
+""" This script distributes an archive to webservers"""
+from fabric.api import local, put, run, env
+from datetime import datetime
+from os.path import isfile
 
-""" Deploys a web static to servers based on some weird shit """
-
-import os
-from fabric.api import env, local, put, run
-
-
-env.user = 'ubuntu'
-env.hosts = ['100.26.159.170', '18.206.206.105']
-env.key_filename = '~/.ssh/id_rsa'
+env.hosts = ["100.25.30.148", "35.175.105.87"]
+env.user = "ubuntu"
 
 
 def do_pack():
-    """ A function to pack the current webstatic version """
+    """ Generates a .tgz archive """
 
-    local('mkdir -p versions')
+    time_now = datetime.now().strftime("%Y%m%d%H%M%S")
+    filename = "web_static_{}.tgz".format(time_now)
+    archive_path = "versions/{}".format(filename)
 
-    current = datetime.now()
-    filename = "versions/web_static_{}{}{}{}{}{}.tgz".format(
-        current.year, current.month, current.day,
-        current.hour, current.minute, current.second)
+    print("Packing web_static to {}".format(archive_path))
 
-    path = local('tar -cvzf {} web_static'.format(filename))
-    if path.succeeded:
-        print("Packed webstatic to {}".format(filename))
-        return filename
-    else:
+    local("mkdir -p versions")
+    result = local("tar -cvzf {} web_static".format(archive_path))
+
+    if result.failed:
         return None
+
+    print("Successfully packed web_static to {}".format(archive_path))
+
+    return archive_path
 
 
 def do_deploy(archive_path):
-    """ Deploys a webstatic to a webserver """
+    """ Distributes an archive to webserver """
 
-    if not os.path.isfile(archive_path):
+    if not isfile(archive_path):
         return False
 
-    packname = archive_path.split("versions/")[-1]
-    temppath = "/tmp/{}".format(packname)
-    comppath = "/data/web_static/releases/{}/".format(packname[:-4])
+    print("Deploying new version")
 
-    put(archive_path, temppath)
-    run('mkdir -p {}'.format(comppath))
-    comp = run('tar -xzf {} -C {}'.format(temppath, comppath))
-    if comp.failed:
+    archive_name = archive_path.split("/")[-1]
+    folder_name = archive_name[: -4]
+    dir_path = "/data/web_static/releases/{}".format(folder_name)
+
+    put(archive_path, "/tmp/")
+    run("mkdir -p {}".format(dir_path))
+    result = run("tar -xzf /tmp/{} -C {}".format(archive_name, dir_path))
+
+    if result.failed:
         return False
-    run('rm {}'.format(temppath))
-    run('mv {}/web_static/* {}'.format(comppath, comppath))
-    run('rm -rf {}/web_static/'.format(comppath))
-    run('rm -rf /data/web_static/current')
-    run('ln -sf {} /data/web_static/current'.format(comppath))
+
+    run("cp -r {}/web_static/* {}".format(dir_path, dir_path))
+    run("rm -rf /tmp/{} {}/web_static".format(archive_name, dir_path))
+    run("rm -rf /data/web_static/current")
+    run("ln -s {} /data/web_static/current".format(dir_path))
+
     print("New version deployed!")
 
     return True
